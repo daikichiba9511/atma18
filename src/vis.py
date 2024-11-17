@@ -247,18 +247,21 @@ def project_trajectory_to_image_coordinate_system(
 
 
 def overlay_trajectory(
-    trajectory: npt.NDArray[np.float32] | Iterable[tuple[npt.NDArray[np.float32], str]],
+    trajectory: npt.NDArray[np.float32] | Iterable[tuple[npt.NDArray[np.float32], str, str]],
     image: npt.NDArray[np.int32],
+    title: str,
     figsize: tuple[int, int] = (15, 10),
+    fig_lim: tuple[int, int] = (128, 64),
     save_fp: pathlib.Path | None = None,
 ) -> None:
     """Overlay trajectory on the image
 
     Args:
-        trajectory (np.ndarray): trajectory or list of (trajectory, color)
+        trajectory (np.ndarray): trajectory or list of (trajectory, color, label)
         image (np.ndarray): image
         intrinsic_matrix (np.ndarray): intrinsic matrix
         figsize (tuple, optional): figure size. Defaults to (15, 10).
+        fig_lim (tuple, optional): figure limit. Defaults to (xlim, ylim) = (128, 64).
         save_fp (pathlib.Path, optional): save file path. Defaults to None. if None, not save.
     """
     fig, ax = plt.subplots(figsize=figsize)
@@ -278,8 +281,12 @@ def overlay_trajectory(
             linestyle="solid",
         )
     else:
-        for traj, color in trajectory:
+        for traj, color, label in trajectory:
             trajectory_image = project_trajectory_to_image_coordinate_system(traj, INTRINSIC_MATRIX)
+            print(f"trajectory_image: {trajectory_image.shape}")
+            if trajectory_image.shape[0] < 1:
+                print(f"Skip {label}, because trajectory_image.shape[0] < 1")
+                continue
             ax.plot(
                 trajectory_image[:, 0],
                 trajectory_image[:, 1],
@@ -288,9 +295,13 @@ def overlay_trajectory(
                 alpha=1.0,
                 markersize=3,
                 linestyle="solid",
+                label=label,
             )
-    ax.set_xlim(0, 128)
-    ax.set_ylim(64, 0)
+    ax.set_xlim(0, fig_lim[0])
+    ax.set_ylim(fig_lim[1], 0)
+    ax.set_title(title)
+    if not isinstance(trajectory, np.ndarray):
+        ax.legend()
     plt.show()
     if save_fp is not None:
         fig.savefig(save_fp)
