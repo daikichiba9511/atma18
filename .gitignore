@@ -6,3 +6,4 @@ tmp
 wandb
 build
 *.egg-info*
+notebooks

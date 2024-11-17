@@ -45,7 +45,7 @@ test: ## run test with pytest
 
 .PHONY: setup-dev
 setup-dev: ## setup my dev env by installing my dotfiles
-	[ ! -d ~/dotfiles ] && git@github.com:daikichiba9511/dotfiles.git ~/dotfiles ;\
+	[ ! -d ~/dotfiles ] && git clone --depth 1 git@github.com:daikichiba9511/dotfiles.git ~/dotfiles ;\
 	cd ~/dotfiles && bash setup.sh && cd -
 
 .PHONY: lock

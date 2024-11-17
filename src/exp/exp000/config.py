@@ -1,4 +1,5 @@
 import pathlib
+from typing import Any
 
 import pydantic
 import torch
@@ -12,7 +13,7 @@ simple baseline
 
 
 class Config(pydantic.BaseModel):
-    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True, frozen=True)
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True, frozen=True, protected_namespaces=())
     name: str = EXP_NO
     description: str = DESCRIPTION
 
@@ -60,3 +61,51 @@ class Config(pydantic.BaseModel):
     # -- Model
     model_name: str = "SimpleNN"
     model_params: dict[str, float] = {}
+
+
+class GBDTConfig(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True, frozen=True, protected_namespaces=())
+    name: str = EXP_NO
+    description: str = """
+    simple baseline
+    """
+    # -- General
+    is_debug: bool = False
+    root_dir: pathlib.Path = constants.ROOT
+    """Root directory. alias to constants.ROOT"""
+    input_dir: pathlib.Path = constants.INPUT_DIR
+    """input directory. alias to constants.INPUT_DIR"""
+    output_dir: pathlib.Path = constants.OUTPUT_DIR / EXP_NO
+    """output directory. constants.OUTPUT_DIR/EXP_NO"""
+    data_dir: pathlib.Path = constants.DATA_DIR
+    """data directory. alias to constants.DATA_DIR"""
+    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    seed: int = 42
+
+    # -- Train
+    train_log_interval: int = 1
+    gbdt_model_params: dict[str, Any] = {
+        "learning_rate": 0.01,
+        "max_depth": 8,
+        # "min_child_weight": 2 * 8 * 3,
+        # "lambda": 30,
+        "gamma": 0.2,
+        "subsample": 0.5,
+        "colsample_bytree": 0.8,
+        "colsample_bylevel": 0.8,
+        "colsample_bynode": 0.8,
+        "verbosity": 2,
+        "seed": seed,
+        "device": "cuda",
+        "n_jobs": -1,
+        "objective": "reg:absoluteerror",
+        "eval_metric": "mae",
+        "tree_method": "hist",
+    }
+    num_boost_round: int = 5000
+    maximize: bool = False
+
+    # -- Data
+    n_folds: int = 5
+    train_data_fp: pathlib.Path = constants.DATA_DIR / "train_features.csv"
+    test_data_fp: pathlib.Path = constants.DATA_DIR / "test_features.csv"

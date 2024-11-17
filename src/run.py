@@ -1,71 +1,82 @@
+import pathlib
+from typing import Iterable
+
 import numpy as np
 import polars as pl
-import torch
-import torch.nn as nn
-import torch.utils.data as torch_data
+import xgboost as xgb
 
-from src import log, metrics, utils
+from src import constants, log, metrics, utils
 
 
-class MyTestDataset(torch_data.Dataset):
-    def __init__(self) -> None:
-        raise NotImplementedError
+def get_models(model_fps: Iterable[pathlib.Path] | None = None) -> list[tuple[float, xgb.Booster]]:
+    if model_fps is None:
+        model_fps = [
+            constants.OUTPUT_DIR / "exp000" / "train_gbdt" / "42" / "xgb_model_0.xgb",
+            constants.OUTPUT_DIR / "exp000" / "train_gbdt" / "42" / "xgb_model_1.xgb",
+            constants.OUTPUT_DIR / "exp000" / "train_gbdt" / "42" / "xgb_model_2.xgb",
+            constants.OUTPUT_DIR / "exp000" / "train_gbdt" / "42" / "xgb_model_3.xgb",
+            constants.OUTPUT_DIR / "exp000" / "train_gbdt" / "42" / "xgb_model_4.xgb",
+        ]
 
-    def __len__(self) -> int:
-        raise NotImplementedError
-
-    def __getitem__(self, idx: int) -> tuple[str, torch.Tensor, torch.Tensor]:
-        raise NotImplementedError
-
-
-def get_model() -> nn.Module:
-    model = ...
-    return model  # type: ignore
+    models = []
+    for model_fp in model_fps:
+        model = xgb.Booster()
+        model.load_model(str(model_fp))
+        models.append((1 / 5, model))
+    return models
 
 
-def get_dataloader(batch_size: int, num_workers: int = 2) -> torch_data.DataLoader:
-    ds = MyTestDataset()
-    dl = torch_data.DataLoader(
-        dataset=ds,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        drop_last=False,
-        pin_memory=True,
-        prefetch_factor=2 if num_workers > 0 else None,
-        worker_init_fn=lambda _: utils.seed_everything(42),
-        persistent_workers=True if num_workers > 0 else False,
+def infer(df: pl.DataFrame) -> dict[str, np.ndarray]:
+    # --- Preprocess
+    from src.exp.exp000 import preprocess
+
+    preprocessor = preprocess.Preprocessor()
+    df = preprocessor.transform(df)
+    target_col = constants.TARGET_COLS
+    drop_cols = [*target_col, "ID", "fold", "scene_id", "scene_time", "index"]
+    feature_cols = sorted(list(set(df.columns) - set(drop_cols)))
+    utils.pinfo(feature_cols)
+
+    # --- Infer
+    df_infer = df.select(feature_cols)
+    ds_infer = xgb.DMatrix(
+        df_infer.to_pandas(),
+        feature_names=feature_cols,
+        enable_categorical=True,
+        nthread=-1,
+        missing=np.inf,
     )
-    return dl
+    models = get_models()
+    y_preds = np.zeros((len(models), df.shape[0], df.shape[1]))
+    for i_model, (_w, model) in enumerate(models):
+        y_pred = model.predict(ds_infer)
+        y_preds[i_model, :, :] = y_pred
 
-
-def infer(model: nn.Module, dataloader: torch_data.DataLoader, device: torch.device) -> pl.DataFrame:
-    model.eval()
-    y_preds = []
-    y_trues = []
-    for batch in dataloader:
-        x, y = batch
-        x = x.to(device, non_blocking=True)
-        with torch.inference_mode():
-            output = model(x)
-        y_pred = output
-        y_preds.append(y_pred.detach().cpu().numpy())
-        if y is not None:
-            y_trues.append(y.detach().cpu().numpy())
-    output = pl.DataFrame({"y_preds": np.concatenate(y_preds)})
-    if y_trues:
-        output = output.with_columns(y_trues=pl.Series(np.concatenate(y_trues)))
-    return output
+    # --- Ensemble
+    y_pred = y_preds.mean(axis=0)
+    return {"y_pred": y_pred}
 
 
 def run_valid() -> None:
     logger = log.get_root_logger()
-    model = get_model()
-    dataloader = get_dataloader(batch_size=32)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    out = infer(model, dataloader, device)
-    score = metrics.score(out["y_preds"].to_numpy(), out["y_trues"].to_numpy())
-    logger.info(f"Score: {score}")
+    df = pl.read_parquet(constants.INPUT_DIR / "train_folds.parquet")
+    oof = pl.DataFrame()
+    for fold in range(5):
+        df_valid = df.filter(pl.col("fold") == fold)
+        out = infer(df_valid)
+        y_pred = out["y_pred"]
+        oof = pl.concat([
+            oof,
+            pl.concat([
+                df_valid,
+                pl.DataFrame({f"pred-{c}": y_pred[:, i_c] for i_c, c in enumerate(constants.TARGET_COLS)}),
+            ]),
+        ])
+    print(oof)
+    metric_score = metrics.score(
+        oof[constants.TARGET_COLS].to_numpy(), oof[[f"pred-{c}" for c in constants.TARGET_COLS]].to_numpy()
+    )
+    logger.info(f"metric_score: {metric_score}")
 
 
 if __name__ == "__main__":

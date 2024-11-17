@@ -7,7 +7,7 @@ import random
 import subprocess
 import time
 from logging import getLogger
-from typing import Any, Generator
+from typing import Any, Generator, Sequence
 
 import joblib
 import matplotlib.pyplot as plt
@@ -98,7 +98,7 @@ def get_commit_hash_head() -> str:
     return result.stdout.decode("utf-8")[:-1]
 
 
-def pinfo(msg: dict[str, Any]) -> None:
+def pinfo(msg: object) -> None:
     logger.info(pprint.pformat(msg))
 
 
@@ -293,3 +293,30 @@ def save_importances(importances: pl.DataFrame, save_fp: pathlib.Path, figsize: 
     plt.tight_layout()
     plt.savefig(save_fp)
     plt.close("all")
+
+
+def to_heatmap(*, x: npt.NDArray[np.integer], y: npt.NDArray[np.integer]) -> npt.NDArray[np.int32]:
+    """make heatmap array from x and y
+
+    Args:
+        x: array of x-axis.
+        y: array of y-axis.
+
+    Returns:
+        heatmap: array of heatmap.
+    """
+    x_unique = np.unique(x)
+    y_unique = np.unique(y)
+    n_class_x = len(x_unique)
+    n_class_y = len(y_unique)
+    heatmap = np.zeros((n_class_x, n_class_y), dtype=np.int32)
+    for i, class_x in enumerate(x_unique):
+        for j, class_y in enumerate(y_unique):
+            heatmap[i, j] = np.sum((x == class_x) & (y == class_y))
+    return heatmap
+
+
+def run_cmd(cmd: Sequence[str]) -> None:
+    cmd_str = " ".join(cmd)
+    print(f"Run command: {cmd_str}")
+    subprocess.run(cmd, check=True)
