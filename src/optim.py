@@ -1,5 +1,5 @@
 from logging import getLogger
-from typing import Any, TypeAlias
+from typing import Any, Literal, TypeAlias, overload
 
 import torch
 import transformers
@@ -47,9 +47,6 @@ def get_optimizer(
     raise ValueError(f"Unknown optimizer name: {optimizer_name}")
 
 
-Schedulers: TypeAlias = lr_scheduler.LRScheduler | lr_scheduler.LambdaLR
-
-
 def setup_scheduler_params(
     scheduler_params: dict[str, Any], num_step_per_epoch: int, n_epoch: int, warmup_epochs: int = 1
 ) -> dict[str, Any]:
@@ -59,6 +56,23 @@ def setup_scheduler_params(
     _scheduler_params["num_warmup_steps"] = int((num_total_steps / n_epoch) * warmup_epochs)
     logger.info(f"Update scheduler_params: {_scheduler_params}")
     return _scheduler_params
+
+
+Schedulers: TypeAlias = lr_scheduler.LRScheduler | lr_scheduler.LambdaLR | lr_scheduler.CosineAnnealingWarmRestarts
+
+
+@overload
+def get_scheduler(
+    scheduler_name: Literal["CosineLRScheduler"], scheduler_params: dict[str, Any], optimizer: torch.optim.Optimizer
+) -> lr_scheduler.LambdaLR: ...
+
+
+@overload
+def get_scheduler(
+    scheduler_name: Literal["CosineAnnealingWarmup"],
+    scheduler_params: dict[str, Any],
+    optimizer: torch.optim.Optimizer,
+) -> lr_scheduler.CosineAnnealingWarmRestarts: ...
 
 
 def get_scheduler(
@@ -76,5 +90,8 @@ def get_scheduler(
     """
     if scheduler_name == "CosineLRScheduler":
         scheduler = transformers.get_cosine_schedule_with_warmup(optimizer, **scheduler_params)
+        return scheduler
+    if scheduler_name == "CosineAnnealingWarmup":
+        scheduler = lr_scheduler.CosineAnnealingWarmRestarts(optimizer, **scheduler_params)
         return scheduler
     raise ValueError(f"Unknown scheduler name: {scheduler_name}")

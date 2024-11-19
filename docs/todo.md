@@ -36,3 +36,15 @@
     - [ ] 結果の比較
     - [ ] 予測結果を眺めて言語化する
 
+- [ ] Aux (exp007)
+  - [x] vEgo
+  - [x] aEgo
+  - [x] brakePressed
+  - [x] steeringAngleDeg
+  - [x] steeringTorque
+  - [ ] left&right blinker
+  - [ ] has_trafficLight
+  - [ ] trafficLightColor
+  - [ ] trafficLightBbox
+  - [ ] labelを画像上の軌道に変換してそれをラベルにする
+  - [ ] flagはbinary classficationにする

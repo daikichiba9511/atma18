@@ -1,8 +1,10 @@
 import pathlib
-from typing import Any
+from typing import Any, Literal, TypeAlias
 
+import albumentations as albu
 import pydantic
 import torch
+from albumentations.pytorch import ToTensorV2
 
 from src import constants
 
@@ -10,6 +12,8 @@ EXP_NO = __file__.split("/")[-2]
 DESCRIPTION = """
 simple baseline
 """
+
+AlbuTransforms: TypeAlias = list[albu.BaseCompose | albu.BasicTransform | albu.OneOf | albu.DualTransform]
 
 
 class Config(pydantic.BaseModel):
@@ -34,33 +38,53 @@ class Config(pydantic.BaseModel):
     # -- Train
     train_log_interval: int = 1
     train_batch_size: int = 32
-    train_n_epochs: int = 10
+    train_n_epochs: int = 20
 
     train_use_amp: bool = True
 
-    train_loss_name: str = "MSELoss"
+    train_loss_name: str = "L1Loss"
     train_loss_params: dict[str, str] = {"reduction": "mean"}
     train_optimizer_name: str = "AdamW"
-    train_optimizer_params: dict[str, float] = {"lr": 1e-3, "weight_decay": 1e-2, "eps": 1e-8, "fused": True}
-    train_scheduler_name: str = "CosineLRScheduler"
+    train_optimizer_params: dict[str, float] = {"lr": 1e-3, "weight_decay": 1e-6, "eps": 1e-8, "fused": True}
+    train_scheduler_name: Literal["CosineLRScheduler"] = "CosineLRScheduler"
     train_scheduler_params: dict[str, float] = {
         "num_warmup_steps": 1,
-        "num_training_steps": 10,
+        "num_training_steps": -1,
         "num_cycles": 0.5,
         "last_epoch": -1,
     }
 
     # -- Valid
-    valid_batch_size: int = 32
+    valid_batch_size: int = 32 * 2
 
     # -- Data
     n_folds: int = 5
-    train_data_fp: pathlib.Path = constants.DATA_DIR / "train.csv"
-    test_data_fp: pathlib.Path = constants.DATA_DIR / "test.csv"
+    train_data_fp: pathlib.Path = constants.INPUT_DIR / "train_folds.parquet"
+    test_data_fp: pathlib.Path = constants.DATA_DIR / "test_features.csv"
 
     # -- Model
-    model_name: str = "SimpleNN"
-    model_params: dict[str, float] = {}
+    model_name: str = "Atma18VisionModel"
+    model_params: dict[str, str | float | bool | int] = {
+        "model_name": "tf_efficientnet_b3.ns_jft_in1k",
+        # "model_name": "resnet34d",
+        "pretrained": True,
+    }
+    size: int = 224
+    train_tranforms: list = [
+        albu.Resize(size, size),
+        albu.OneOf([
+            albu.GaussNoise(var_limit=(10, 50)),
+            albu.GaussianBlur(),
+            albu.MotionBlur(),
+        ]),
+        albu.Normalize(mean=[0] * 9, std=[1] * 9),
+        ToTensorV2(),
+    ]
+    valid_tranforms: list = [
+        albu.Resize(size, size),
+        albu.Normalize(mean=[0] * 9, std=[1] * 9),
+        ToTensorV2(),
+    ]
 
 
 class GBDTConfig(pydantic.BaseModel):

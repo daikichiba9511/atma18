@@ -8,9 +8,10 @@ import numpy.typing as npt
 import polars as pl
 import torch
 import torch.nn as nn
-import wandb
 from matplotlib import axes, figure
 from matplotlib import pyplot as plt
+
+import wandb
 
 logger = logging.getLogger(__name__)
 
@@ -164,9 +165,6 @@ class MetricsMonitor:
         self._metrics_df = pl.DataFrame()
 
     def update(self, metrics: dict[str, float | int]) -> None:
-        if "epoch" in metrics:
-            raise ValueError("epoch is reserved word. Please use another key name")
-
         _metrics = pl.from_dict({k: [v] for k, v in metrics.items()})
         if self._metrics_df.is_empty():
             self._metrics_df = _metrics

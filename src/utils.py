@@ -1,13 +1,15 @@
 import contextlib
 import math
+import multiprocessing as mp
 import os
 import pathlib
 import pprint
 import random
 import subprocess
 import time
+from collections.abc import Callable
 from logging import getLogger
-from typing import Any, Generator, Sequence
+from typing import Any, Generator, Sequence, TypeVar
 
 import joblib
 import matplotlib.pyplot as plt
@@ -64,6 +66,7 @@ def trace(title: str) -> Generator[None, None, None]:
     duration = time.time() - t0
     duration_min = duration / 60
     msg = f"{title}: {m1:.2f}GB ({sign}{delta_mem:.2f}GB):{duration:.4f}s ({duration_min:3f}m)"
+    logger.info(f"\n{msg}\n")
     print(f"\n{msg}\n")
 
 
@@ -89,6 +92,7 @@ def trace_with_cuda(title: str) -> Generator[None, None, None]:
         f"{title}: => RAM:{m1:.2f}GB({sign}{delta_mem:.2f}GB) "
         f"=> VRAM:{allocated1:.2f}GB({sign_alloc}{delta_alloc:.2f}) => DUR:{duration:.4f}s({duration_min:3f}m)"
     ])
+    logger.info(f"\n{msg}\n")
     print(f"\n{msg}\n")
 
 
@@ -320,3 +324,68 @@ def run_cmd(cmd: Sequence[str]) -> None:
     cmd_str = " ".join(cmd)
     print(f"Run command: {cmd_str}")
     subprocess.run(cmd, check=True)
+
+
+_T = TypeVar("_T")
+_S = TypeVar("_S")
+
+
+def call_mp_unordered(
+    fn: Callable[[_S], _T], containers: Sequence[_S] | npt.NDArray, with_progress: bool = False
+) -> list[_T]:
+    with mp.Pool(processes=mp.cpu_count()) as pool:
+        if with_progress:
+            return list(
+                tqdm(
+                    pool.imap_unordered(fn, containers),
+                    total=len(containers),
+                    desc=f"Fn={fn.__name__}",
+                    dynamic_ncols=True,
+                )
+            )
+        return list(pool.imap_unordered(fn, containers))
+
+
+def call_mp_ordered(
+    fn: Callable[[_S], _T], containers: Sequence[_S] | npt.NDArray, with_progress: bool = False
+) -> list[_T]:
+    with mp.Pool(processes=mp.cpu_count()) as pool:
+        if with_progress:
+            return list(
+                tqdm(
+                    pool.map(fn, containers),
+                    total=len(containers),
+                    desc=f"Fn={fn.__name__}",
+                    dynamic_ncols=True,
+                )
+            )
+        return list(pool.map(fn, containers))
+
+
+if __name__ == "__main__":
+    import time
+    from typing import TYPE_CHECKING
+
+    import numpy as np
+    from typing_extensions import reveal_type
+
+    test = list(range(10000))
+
+    def test_fn(x: int) -> int:
+        res = []
+        for _ in range(100000):
+            res.append(x)
+        return x
+
+    with trace("call_mp_unordered"):
+        res1 = call_mp_unordered(test_fn, test, with_progress=True)
+    with trace("call_mp_ordered"):
+        res2 = call_mp_ordered(test_fn, test, with_progress=True)
+    with trace("normal"):
+        res3 = [test_fn(x) for x in tqdm(test, desc="normal", dynamic_ncols=True, total=len(test))]
+
+    print(f"{res1[:5] = }, {res2[:5] = }, {res3[:5] = }")
+
+    if TYPE_CHECKING:
+        reveal_type(res1)  # list[int]
+        reveal_type(res2)  # list[int]
