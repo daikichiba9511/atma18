@@ -1,4 +1,5 @@
 import argparse
+import itertools
 import multiprocessing as mp
 import pathlib
 from collections.abc import Callable, Mapping
@@ -61,6 +62,7 @@ def train_one_epoch(
     use_amp: bool,
     scaler: grad_scaler.GradScaler | None = None,
     max_norm: float = 1000.0,
+    n_col_aux: int = 3,
 ) -> tuple[float, float]:
     """
     Args:
@@ -87,7 +89,6 @@ def train_one_epoch(
     for batch_idx, batch in pbar:
         _key, x, y = batch
         x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
-        n_col_aux = 2
         y_aux = y[:, 18 : 18 + n_col_aux].float()
         y_aux_cls = y[:, 18 + n_col_aux :]
         y = y[:, :18]
@@ -99,13 +100,19 @@ def train_one_epoch(
             y_pred_aux_cls_brake = output["logits_aux_cls_brake"]
 
             loss = criterion(y_pred, y)
-            loss += 0.5 * criterion(y_pred_aux[:, 0], y_aux[:, 0])
-            loss += 0.5 * criterion(y_pred_aux[:, 1], y_aux[:, 1])
-            # loss += 0.01 * criterion(y_pred_aux[:, 2], y_aux[:, 2])
-            # loss += 0.01 * criterion(y_pred_aux[:, 3], y_aux[:, 3])
-            loss += 0.1 * F.binary_cross_entropy_with_logits(y_pred_aux_cls_blinker[:, 0], y_aux_cls[:, 0])
-            loss += 0.1 * F.binary_cross_entropy_with_logits(y_pred_aux_cls_blinker[:, 1], y_aux_cls[:, 1])
-            loss += 0.1 * F.binary_cross_entropy_with_logits(y_pred_aux_cls_brake[:, 0], y_aux_cls[:, 2])
+            loss += 0.5 * criterion(y_pred_aux[:, 0], y_aux[:, 0])  # vEgo
+            loss += 0.5 * criterion(y_pred_aux[:, 1], y_aux[:, 1])  # aEgo
+            loss += 0.01 * criterion(y_pred_aux[:, 2], y_aux[:, 2])  # steeringAngleDeg
+            # loss += 0.01 * criterion(y_pred_aux[:, 3], y_aux[:, 3])  # steeringTorque
+            loss += 0.1 * F.binary_cross_entropy_with_logits(
+                y_pred_aux_cls_blinker[:, 0], y_aux_cls[:, 0]
+            )  # leftBlinker
+            loss += 0.1 * F.binary_cross_entropy_with_logits(
+                y_pred_aux_cls_blinker[:, 1], y_aux_cls[:, 1]
+            )  # rightBlinker
+            loss += 0.1 * F.binary_cross_entropy_with_logits(
+                y_pred_aux_cls_brake[:, 0], y_aux_cls[:, 2]
+            )  # brakePressed
 
         optimizer.zero_grad()
         if scaler is not None:
@@ -184,7 +191,6 @@ def valid_one_epoch(
 # =============================================================================
 TrainBatch: TypeAlias = tuple[str, torch.Tensor, torch.Tensor]
 ValidBatch: TypeAlias = tuple[str, torch.Tensor, torch.Tensor]
-
 AlbuTransforms: TypeAlias = list[albu.BasicTransform | albu.OneOf | albu.BaseCompose]
 
 
@@ -311,6 +317,8 @@ def init_dataloader(
     train_transforms: AlbuTransforms | None = None,
     valid_transforms: AlbuTransforms | None = None,
     debug: bool = False,
+    cols_aux: tuple[str, ...] = ("vEgo", "aEgo", "steeringAngleDeg"),
+    cols_aux_cls: tuple[str, ...] = ("brakePressed", "leftBlinker", "rightBlinker"),
 ) -> tuple[torch_data.DataLoader, torch_data.DataLoader]:
     if mp.cpu_count() < num_workers:
         num_workers = mp.cpu_count()
@@ -344,27 +352,13 @@ def init_dataloader(
     label_train = df_train[constants.TARGET_COLS].to_numpy()
     label_valid = df_valid[constants.TARGET_COLS].to_numpy()
 
-    label_vEgo = df_train["vEgo"].to_numpy().reshape(-1, 1)
-    label_aEgo = df_train["aEgo"].to_numpy().reshape(-1, 1)
-    label_brake_pressed = df_train["brakePressed"].to_numpy().reshape(-1, 1)
-    label_steering_angle_deg = df_train["steeringAngleDeg"].to_numpy().reshape(-1, 1)
-    label_steering_torque = df_train["steeringTorque"].to_numpy().reshape(-1, 1)
-    label_left_blinker = df_train["leftBlinker"].to_numpy().reshape(-1, 1)
-    label_right_blinker = df_train["rightBlinker"].to_numpy().reshape(-1, 1)
-    label_aux = np.concatenate(
-        [
-            # -- reg aux
-            label_vEgo,
-            label_aEgo,
-            # label_steering_angle_deg,
-            # label_steering_torque,
-            # -- cls aux
-            label_brake_pressed,
-            label_left_blinker,
-            label_right_blinker,
-        ],
-        axis=1,
-    )
+    label_aux = []
+    cols_used_aux = []
+    for col in itertools.chain(cols_aux, cols_aux_cls):
+        label_aux.append(df_train[col].to_numpy().reshape(-1, 1))
+        cols_used_aux.append(col)
+    label_aux = np.concatenate(label_aux, axis=1)
+    logger.info(f"{cols_used_aux=}")
 
     cache_paths = []
     for base_path in df["base_path"].to_list():
@@ -443,6 +437,7 @@ def main() -> None:
     # =============================================================================
     # TrainLoop
     # =============================================================================
+    scores_fold, oof_fold = [], []
     for fold in range(cfg.n_folds):
         logger.info(f"Start fold: {fold}")
         utils.seed_everything(cfg.seed + fold)
@@ -468,6 +463,10 @@ def main() -> None:
             cfg.num_workers,
             fold,
             debug=cfg.is_debug,
+            cols_aux=cfg.cols_aux,
+            cols_aux_cls=cfg.cols_aux_cls,
+            train_transforms=cfg.train_tranforms,
+            valid_transforms=cfg.valid_tranforms,
         )
         optimizer = optim.get_optimizer(cfg.train_optimizer_name, cfg.train_optimizer_params, model=model)
         if cfg.train_scheduler_params.get("num_training_steps") == -1:
@@ -491,11 +490,13 @@ def main() -> None:
                 criterion=criterion,
                 device=cfg.device,
                 use_amp=cfg.train_use_amp,
+                n_col_aux=len(cfg.cols_aux),
             )
             valid_loss_avg, valid_score, valid_oof = valid_one_epoch(
                 model=ema_model.module, loader=valid_loader, criterion=criterion, device=cfg.device
             )
-            if valid_score < best_score:
+            # 最後の時のみ保存する
+            if epoch == cfg.train_n_epochs - 1:
                 best_oof = valid_oof
                 best_score = valid_score
             metric_map = {
@@ -507,7 +508,7 @@ def main() -> None:
             }
             metric_monitor.update(metric_map)
             if epoch % cfg.train_log_interval == 0:
-                metric_monitor.show()
+                metric_monitor.show(use_logging=epoch == cfg.train_n_epochs - 1)
             if run:
                 wandb.log(metric_map)
 
@@ -515,6 +516,8 @@ def main() -> None:
         scores = {}
         for col in constants.TARGET_COLS:
             scores[col] = metrics.score(y_true=best_oof[col].to_numpy(), y_pred=best_oof[f"pred-{col}"].to_numpy())
+        scores_fold.append(best_score)
+        oof_fold.append(best_oof)
         utils.pinfo(scores)
         logger.info(f"Best Score: {best_score}")
         best_oof.write_parquet(cfg.output_dir / f"oof_{fold}.parquet")
@@ -529,7 +532,25 @@ def main() -> None:
 
         if cfg.is_debug:
             break
-    logger.info("End of Training")
+
+    oof_fold = pl.concat(oof_fold, how="vertical")
+    score_fold = metrics.score(
+        y_true=oof_fold[constants.TARGET_COLS].to_numpy(),
+        y_pred=oof_fold[[f"pred-{c}" for c in constants.TARGET_COLS]].to_numpy(),
+    )
+    oof_fold.write_parquet(cfg.output_dir / "oof.parquet")
+
+    logger.info(f"""
+    ===================================================
+
+    Scores: {scores_fold}, Mean: {np.mean(scores_fold)} +/- {np.std(scores_fold)}
+
+    ScoresFold: {score_fold}
+
+    ===================================================
+
+    --- End of Training ---
+    """)
 
 
 if __name__ == "__main__":

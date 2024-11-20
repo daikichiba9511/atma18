@@ -2,6 +2,7 @@ import pathlib
 from typing import Any, Literal, TypeAlias
 
 import albumentations as albu
+import cv2
 import pydantic
 import torch
 from albumentations.pytorch import ToTensorV2
@@ -70,6 +71,17 @@ class Config(pydantic.BaseModel):
         "model_name": "convnext_tiny.fb_in22k_ft_in1k",
         "pretrained": True,
     }
+    cols_aux: tuple[str, ...] = (
+        "vEgo",
+        "aEgo",
+        "steeringAngleDeg",
+        # "steeringTorque",
+    )
+    cols_aux_cls: tuple[str, ...] = (
+        "brakePressed",
+        "leftBlinker",
+        "rightBlinker",
+    )
     size: int = 224
     train_tranforms: list = [
         albu.Resize(size, size),
@@ -78,6 +90,23 @@ class Config(pydantic.BaseModel):
             albu.GaussianBlur(),
             albu.MotionBlur(),
         ]),
+        albu.OneOf([
+            albu.RandomGamma(gamma_limit=(30, 150), p=1),
+            albu.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.3, p=1),
+            albu.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2, p=1),
+            albu.HueSaturationValue(hue_shift_limit=20, sat_shift_limit=30, val_shift_limit=20, p=1),
+            albu.CLAHE(clip_limit=5.0, tile_grid_size=(5, 5), p=1),
+        ]),
+        # albu.HorizontalFlip(p=0.5),
+        # albu.ShiftScaleRotate(
+        #     shift_limit=0.0,
+        #     scale_limit=0.1,
+        #     rotate_limit=15,
+        #     interpolation=cv2.INTER_LINEAR,
+        #     border_mode=cv2.BORDER_CONSTANT,
+        #     p=0.8,
+        # ),
+        albu.CoarseDropout(max_height=50, max_width=50, min_holes=2, p=0.5),
         albu.Normalize(mean=[0] * 9, std=[1] * 9),
         ToTensorV2(),
     ]

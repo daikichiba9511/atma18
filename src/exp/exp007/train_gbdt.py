@@ -45,7 +45,12 @@ def main() -> None:
         df_all = df_all.join(df_traffic_light_count, on="ID", how="left").with_columns(*[
             pl.col(c).fill_null(0).alias(c) for c in df_traffic_col
         ])
+
         df = df_train.select(["ID", *constants.TARGET_COLS]).join(df_all, on="ID", how="left")
+        # --- Read OOF prediction by CNN, and then join it with df
+
+        # df_test = df_test.join(df_all, on="ID", how="left")
+
         # seedで順番変えても良いかもしれん
         df = df.with_columns(fold=pl.lit(-1)).with_row_index()
         for i, scene_id in enumerate(df["scene_id"].unique().sort()):

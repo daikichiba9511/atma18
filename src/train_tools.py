@@ -175,12 +175,16 @@ class MetricsMonitor:
             wandb.log(metrics)
         logger.info(f"Metrics updated: {pprint.pformat(metrics)}")
 
-    def show(self, log_interval: int = 1) -> None:
+    def show(self, log_interval: int = 1, use_logging: bool = False) -> None:
         """print metrics to logger"""
         logging_metrics = self._metrics_df.filter(
             pl.col("epoch").is_in(list(range(0, len(self._metrics_df), log_interval)))
         )
-        logger.info(f"\n{logging_metrics.to_pandas(use_pyarrow_extension_array=True).to_markdown()}")
+        msg = f"\n{logging_metrics.to_pandas(use_pyarrow_extension_array=True).to_markdown()}"
+        if use_logging:
+            logger.info(msg)
+        else:
+            print(msg)
 
     def plot(
         self,

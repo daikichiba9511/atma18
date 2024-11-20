@@ -13,7 +13,7 @@ class Atma18VisionModel(nn.Module):
         self.n_features = self.encoder.num_features
         self.n_label = 18
         self.fc = nn.Linear(self.n_features, self.n_label)
-        self.fc_aux1 = nn.Linear(self.n_features, 2)
+        self.fc_aux1 = nn.Linear(self.n_features, 4)
         self.fc_aux_cls_blinker = nn.Linear(self.n_features, 2)
         self.fc_aux_cls_brake = nn.Linear(self.n_features, 1)
 

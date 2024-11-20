@@ -26,9 +26,9 @@
     - [ ] 結果の比較
     - [ ] 予測結果を眺めて言語化する
   - [ ] LightGBM + CNN stacking baseline (CNN only), 読む <https://www.guruguru.science/competitions/25/discussions/03a365c7-27ce-490e-ab6f-e7788ce470c8/>
-    - [ ] 使えそうなアイデアを文章に起こす
-    - [ ] 新しい実験に組み込む
-    - [ ] 結果の比較
+    - [x] 使えそうなアイデアを文章に起こす
+    - [x] 新しい実験に組み込む
+    - [x] 結果の比較
     - [ ] 予測結果を眺めて言語化する
   - [ ] LightGBM + CNN stacking baseline (LightGBM + CNN), 読む <https://www.guruguru.science/competitions/25/discussions/30a373f3-3bde-4956-a636-1b8f0934750b/>
     - [ ] 使えそうなアイデアを文章に起こす
@@ -42,9 +42,9 @@
   - [x] brakePressed
   - [x] steeringAngleDeg
   - [x] steeringTorque
-  - [ ] left&right blinker
+  - [x] left&right blinker
   - [ ] has_trafficLight
   - [ ] trafficLightColor
   - [ ] trafficLightBbox
   - [ ] labelを画像上の軌道に変換してそれをラベルにする
-  - [ ] flagはbinary classficationにする
+  - [x] flagはbinary classificationにする

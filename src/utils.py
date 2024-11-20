@@ -333,7 +333,7 @@ _S = TypeVar("_S")
 def call_mp_unordered(
     fn: Callable[[_S], _T], containers: Sequence[_S] | npt.NDArray, with_progress: bool = False
 ) -> list[_T]:
-    with mp.Pool(processes=mp.cpu_count()) as pool:
+    with mp.get_context("spawn").Pool(processes=mp.cpu_count()) as pool:
         if with_progress:
             return list(
                 tqdm(
@@ -349,7 +349,7 @@ def call_mp_unordered(
 def call_mp_ordered(
     fn: Callable[[_S], _T], containers: Sequence[_S] | npt.NDArray, with_progress: bool = False
 ) -> list[_T]:
-    with mp.Pool(processes=mp.cpu_count()) as pool:
+    with mp.get_context("spawn").Pool(processes=mp.cpu_count()) as pool:
         if with_progress:
             return list(
                 tqdm(

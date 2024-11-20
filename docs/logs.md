@@ -14,9 +14,94 @@
 - exp007
 
 Aux: vEgo(0.5),aEgo(0.5),rightBlinker(0.1),leftBlinker(0.1),brake(0.1)
-Fold0: 0.739008
-Fold1: 0.752076
-Fold2:
-Fold3:
-Fold4:
-Mean:
+Scores: [0.739008, 0.752076, 0.789385, 0.786481, 0.676495] Mean: 0.748689
+
+Aux: vEgo(0.5),aEgo(0.5),rightBlinker(0.5),leftBlinker(0.5),brake(0.5)
+Scores: [0.751432, 0.780632, 0.758083, 0.761099, 0.737548] Mean: 0.7577588
+
+Aux: vEgo(0.5),aEgo(0.5),rightBlinker(0.1),leftBlinker(0.1),brake(0.1),steeringAgreeDeg(0.01)
+Scores: [0.753489, 0.769176, 0.732074, 0.76733, 0.698637] Mean: 0.7441412
+Scores: [0.7465812563896179, 0.7679423093795776, 0.7398396730422974, 0.7303324937820435, 0.6915957927703857], Mean: 0.7352583050727844 +/- 0.025092313141482372
+Scores: [0.7465812563896179, 0.7679423093795776, 0.7398396730422974, 0.7303324937820435, 0.6915957927703857], Mean: 0.7352583050727844 +/- 0.025092313141482372
+ScoresFold: 0.735254168510437
+
+AUXの微妙な違いで、ensembleのタネになりそう
+
+augmentationを足しても意味なかったっぽい。。 < なんと渡してなかったwwwww
+
+Aux: vEgo(0.5),aEgo(0.5),rightBlinker(0.1),leftBlinker(0.1),brake(0.1),steeringAgreeDeg(0.01),steeringTorque(0.01)
+Scores: [0.7314547896385193, 0.7737607359886169, 0.7413656711578369, 0.7899930477142334, 0.7404636740684509], Mean: 0.7554075837135314 +/- 0.022482102242799125
+
+- Augmentationを追加した
+
+```python
+train_tranforms: list = [
+    albu.Resize(size, size),
+    albu.OneOf([
+        albu.GaussNoise(var_limit=(10, 50)),
+        albu.GaussianBlur(),
+        albu.MotionBlur(),
+    ]),
+    albu.OneOf([
+        albu.RandomGamma(gamma_limit=(30, 150), p=1),
+        albu.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.3, p=1),
+        albu.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2, p=1),
+        albu.HueSaturationValue(hue_shift_limit=20, sat_shift_limit=30, val_shift_limit=20, p=1),
+        albu.CLAHE(clip_limit=5.0, tile_grid_size=(5, 5), p=1),
+    ]),
+    albu.HorizontalFlip(p=0.5),
+    albu.ShiftScaleRotate(
+        shift_limit=0.0,
+        scale_limit=0.1,
+        rotate_limit=15,
+        interpolation=cv2.INTER_LINEAR,
+        border_mode=cv2.BORDER_CONSTANT,
+        p=0.8,
+    ),
+    albu.CoarseDropout(max_height=50, max_width=50, min_holes=2, p=0.5),
+    albu.Normalize(mean=[0] * 9, std=[1] * 9),
+    ToTensorV2(),
+]
+```
+
+Scores: [0.5574209094047546, 0.5814367532730103, 0.5712170600891113, 0.5709481835365295, 0.5701022148132324], Mean: 0.5702250242233277 +/- 0.007631125752773015
+ScoresFold: 0.5702422261238098
+
+```python
+train_tranforms: list = [
+    albu.Resize(size, size),
+    albu.OneOf([
+        albu.GaussNoise(var_limit=(10, 50)),
+        albu.GaussianBlur(),ｊ
+        albu.MotionBlur(),
+    ]),
+    albu.Normalize(mean=[0] * 9, std=[1] * 9),
+    ToTensorV2(),
+]
+```
+Scores: [0.5580177307128906, 0.5688067078590393, 0.5675504803657532, 0.5719417929649353, 0.5585517883300781], Mean: 0.5649737000465394 +/- 0.005648230237663063
+ScoresFold: 0.5649837255477905
+
+```python
+train_tranforms: list = [
+    albu.Resize(size, size),
+    albu.OneOf([
+        albu.GaussNoise(var_limit=(10, 50)),
+        albu.GaussianBlur(),
+        albu.MotionBlur(),
+    ]),
+    albu.OneOf([
+        albu.RandomGamma(gamma_limit=(30, 150), p=1),
+        albu.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.3, p=1),
+        albu.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.2, p=1),
+        albu.HueSaturationValue(hue_shift_limit=20, sat_shift_limit=30, val_shift_limit=20, p=1),
+        albu.CLAHE(clip_limit=5.0, tile_grid_size=(5, 5), p=1),
+    ]),
+    albu.CoarseDropout(max_height=50, max_width=50, min_holes=2, p=0.5),
+    albu.Normalize(mean=[0] * 9, std=[1] * 9),
+    ToTensorV2(),
+]
+```
+
+Scores: [0.5608667731285095, 0.5692499279975891, 0.57230544090271, 0.5484209656715393, 0.5538298487663269], Mean: 0.560934591293335 +/- 0.009005707492753222
+ScoresFold: 0.5609493851661682
