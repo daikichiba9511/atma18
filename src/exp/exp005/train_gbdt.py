@@ -88,7 +88,6 @@ def main() -> None:
             label=y_train,
             feature_names=feature_cols,
             enable_categorical=True,
-            nthread=4,
             missing=np.inf,
         )
         ds_valid = xgb.DMatrix(
@@ -96,7 +95,6 @@ def main() -> None:
             label=df_valid[target_cols].to_numpy(),
             feature_names=feature_cols,
             enable_categorical=True,
-            nthread=4,
             missing=np.inf,
         )
 
@@ -117,7 +115,9 @@ def main() -> None:
         df_importances = pl.DataFrame({"feature": importances.keys(), "gain": importances.values()})
         df_importances.write_parquet(save_dir / f"importances_{fold}.parquet")
         utils.save_importances(df_importances, save_dir / f"importances_{fold}.png")
+        print(f"Save to {save_dir / f'importances_{fold}.png'}")
         model.save_model(save_dir / f"xgb_model_{fold}.ubj")
+        print(f"Save to {save_dir / f'xgb_model_{fold}.ubj'}")
 
         y_preds = model.predict(ds_valid)
         oof = pl.concat(
@@ -129,7 +129,10 @@ def main() -> None:
             ],
             how="horizontal",
         )
+        oof = utils.reduce_memory_usage_pl(oof, name="oof")
+        print(oof)
         oof_total = pl.concat([oof_total, oof], how="vertical")
+        oof_total = utils.reduce_memory_usage_pl(oof_total, name="oof_total")
 
         score_each_dim = {}
         for i, col in enumerate(target_cols):

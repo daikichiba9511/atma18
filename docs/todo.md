@@ -48,3 +48,6 @@
   - [ ] trafficLightBbox
   - [ ] labelを画像上の軌道に変換してそれをラベルにする
   - [x] flagはbinary classificationにする
+
+- [x] x0, ..., z5までそれぞれ別のGBDTモデルを作る -> あまり向上がみられん
+- [ ] 時刻tのモデルの学習には時刻t-1,t-2,... の予測結果を付与する

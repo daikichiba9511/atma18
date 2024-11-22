@@ -26,6 +26,8 @@ from . import config, models, preprocess
 
 logger = log.get_root_logger()
 EXP_NO = __file__.split("/")[-2]
+CALLED_TIME = log.get_called_time()
+COMMIT_HASH = utils.get_commit_hash_head()
 
 
 def parse_args() -> argparse.Namespace:
@@ -541,15 +543,16 @@ def main() -> None:
     oof_fold.write_parquet(cfg.output_dir / "oof.parquet")
 
     logger.info(f"""
-    ===================================================
+===================================================
+Exp: {cfg.name}, DESC: {cfg.description}
 
-    Scores: {scores_fold}, Mean: {np.mean(scores_fold)} +/- {np.std(scores_fold)}
+Total Score: {score_fold}
 
-    ScoresFold: {score_fold}
+Scores: {scores_fold}
+Mean: {np.mean(scores_fold)} +/- {np.std(scores_fold)}
 
-    ===================================================
-
-    --- End of Training ---
+Training finished. {CALLED_TIME = }, {COMMIT_HASH = }, Duration: {log.calc_duration_from(CALLED_TIME)}
+===================================================
     """)
 
 

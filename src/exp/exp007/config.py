@@ -67,8 +67,8 @@ class Config(pydantic.BaseModel):
     model_name: str = "Atma18VisionModel"
     model_params: dict[str, str | float | bool | int] = {
         # "model_name": "tf_efficientnet_b3.ns_jft_in1k",
-        # "model_name": "resnet34d",
-        "model_name": "convnext_tiny.fb_in22k_ft_in1k",
+        "model_name": "resnet34d",
+        # "model_name": "convnext_tiny.fb_in22k_ft_in1k",
         "pretrained": True,
     }
     cols_aux: tuple[str, ...] = (
@@ -140,25 +140,34 @@ class GBDTConfig(pydantic.BaseModel):
     train_log_interval: int = 1
     gbdt_model_params: dict[str, Any] = {
         "learning_rate": 0.01,
-        "max_depth": 8,
-        # "min_child_weight": 2 * 8 * 3,
-        "lambda": 10,
-        "alpha": 0.2,
-        "gamma": 0.2,
-        "subsample": 0.6,
-        "colsample_bytree": 0.8,
-        "colsample_bylevel": 0.8,
-        "colsample_bynode": 0.8,
-        "verbosity": 2,
+        "verbosity": -1,
         "seed": seed,
-        "device": "cuda",
-        # "n_jobs": -1,
-        "objective": "reg:absoluteerror",
-        "eval_metric": "mae",
-        "tree_method": "hist",
+        "boosting_type": "gbdt",
+        "n_jobs": -1,
+        "max_depth": 5,
+        "num_leaves": int(0.7 * (2**5)),
+        "bagging_seed": seed,
+        "feature_fraction_seed": seed,
+        "drop_seed": seed,
+        "metric": "mae",
+        "objective": "regression_l1",
     }
-    num_boost_round: int = 5000
+    num_boost_round: int = 10000
+    # num_boost_round: int = 3
     maximize: bool = False
+    use_cols: tuple[str, ...] = (
+        "vEgo",
+        "aEgo",
+        "steeringAngleDeg",
+        "steeringTorque",
+        "brake",
+        "brakePressed",
+        "gas",
+        "gasPressed",
+        "leftBlinker",
+        "rightBlinker",
+        *[f"nn-pred-{c}" for c in constants.TARGET_COLS],  # prediciton by CNN
+    )
 
     # -- Data
     n_folds: int = 5

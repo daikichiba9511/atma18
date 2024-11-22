@@ -34,8 +34,38 @@ def make_df_traffic_light_count(df_traffic_light: pl.DataFrame) -> pl.DataFrame:
 
 def add_feature(
     df: pl.DataFrame,
-    agg_cols: tuple[str, ...] = ("vEgo", "aEgo", "steeringAngleDeg", "steeringTorque", "gas"),
+    agg_cols: tuple[str, ...] = (
+        "vEgo",
+        "aEgo",
+        "steeringAngleDeg",
+        "steeringTorque",
+        "brake",
+        "brakePressed",
+        "gas",
+        "gasPressed",
+        "leftBlinker",
+        "rightBlinker",
+    ),
 ) -> pl.DataFrame:
+    nn_pred_cols = [c for c in agg_cols if c.startswith("nn-pred-")]
+    exprs = [
+        *[pl.col(c).shift(-1).over("scene_id").alias(f"{c}_shift-1") for c in agg_cols],
+        *[pl.col(c).shift(1).over("scene_id").alias(f"{c}_shift+1") for c in agg_cols],
+        *[pl.col(c).diff(-1).over("scene_id").alias(f"{c}_diff-1") for c in agg_cols],
+        *[pl.col(c).diff(1).over("scene_id").alias(f"{c}_diff+1") for c in agg_cols],
+        *[pl.mean(c).over("scene_id").alias(f"{c}_mean") for c in agg_cols],
+        *[pl.std(c).over("scene_id").alias(f"{c}_std") for c in agg_cols],
+        *[pl.min(c).over("scene_id").alias(f"{c}_min") for c in agg_cols],
+        *[pl.max(c).over("scene_id").alias(f"{c}_max") for c in agg_cols],
+    ]
+    if not nn_pred_cols:
+        exprs.extend([
+            *[pl.col(c).shift(-2).over("scene_id").alias(f"{c}_shift-2") for c in agg_cols],
+            *[pl.col(c).shift(2).over("scene_id").alias(f"{c}_shift+2") for c in agg_cols],
+            *[pl.col(c).diff(-2).over("scene_id").alias(f"{c}_diff-2") for c in agg_cols],
+            *[pl.col(c).diff(2).over("scene_id").alias(f"{c}_diff+2") for c in agg_cols],
+        ])
+
     df = (
         df.with_columns(
             scene_id=pl.col("ID").str.split("_").list[0],
@@ -43,16 +73,7 @@ def add_feature(
             gearShifter=pl.col("gearShifter").cast(pl.Categorical),
         )
         .sort(["scene_id", "scene_time"])
-        .with_columns(*[
-            *[pl.col(c).shift(-1).over("scene_id").alias(f"{c}_shift-1") for c in agg_cols],
-            *[pl.col(c).shift(1).over("scene_id").alias(f"{c}_shift+1") for c in agg_cols],
-            *[pl.col(c).diff(-1).over("scene_id").alias(f"{c}_diff-1") for c in agg_cols],
-            *[pl.col(c).diff(1).over("scene_id").alias(f"{c}_diff+1") for c in agg_cols],
-            *[pl.mean(c).over("scene_id").alias(f"{c}_mean") for c in agg_cols],
-            *[pl.std(c).over("scene_id").alias(f"{c}_std") for c in agg_cols],
-            *[pl.min(c).over("scene_id").alias(f"{c}_min") for c in agg_cols],
-            *[pl.max(c).over("scene_id").alias(f"{c}_max") for c in agg_cols],
-        ])
+        .with_columns(*exprs)
     )
     df_origin = df.clone()
     # original_cols = df_origin.columns
@@ -156,10 +177,24 @@ def add_feature(
             how="left",
         )
     )
-    # drop_cols = sorted(list(set(original_cols) & set(all_features.columns)))
-    # all_features = all_features.drop(drop_cols)
+    original_cols = df_origin.columns
+    drop_cols = sorted(list(set(original_cols) & set(all_features.columns) - {"scene_id"}))
+    all_features = all_features.drop(drop_cols)
+    print(all_features)
     df = df_origin.join(all_features.fill_null(0), on="scene_id", how="left")
 
+    return df
+
+
+def cast_dtype(df: pl.DataFrame) -> pl.DataFrame:
+    for col in df.columns:
+        if col in ["scene_id", "ID"]:
+            continue
+        dtype = df[col].dtype
+        if dtype in [pl.Boolean]:
+            df = df.with_columns(pl.col(col).cast(pl.Int32))
+        elif dtype in [pl.String, pl.Utf8]:
+            df = df.with_columns(pl.col(col).cast(pl.Categorical))
     return df
 
 

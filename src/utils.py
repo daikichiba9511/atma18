@@ -284,7 +284,7 @@ def plot_confusion_matrix(
     return fig, ax
 
 
-def save_importances(importances: pl.DataFrame, save_fp: pathlib.Path, figsize: tuple[int, int] = (16, 30)) -> None:
+def save_importances(importances: pl.DataFrame, save_fp: pathlib.Path, figsize: tuple[int, int] = (20, 65)) -> None:
     mean_gain = importances[["gain", "feature"]].group_by("feature").mean().rename({"gain": "mean_gain"})
     importances = importances.join(mean_gain, on="feature")
     plt.figure(figsize=figsize)
@@ -331,15 +331,20 @@ _S = TypeVar("_S")
 
 
 def call_mp_unordered(
-    fn: Callable[[_S], _T], containers: Sequence[_S] | npt.NDArray, with_progress: bool = False
+    fn: Callable[[_S], _T],
+    containers: Sequence[_S] | npt.NDArray,
+    with_progress: bool = False,
+    desc: str | None = None,
 ) -> list[_T]:
+    if desc is None:
+        desc = "call func in multiprocessing"
     with mp.get_context("spawn").Pool(processes=mp.cpu_count()) as pool:
         if with_progress:
             return list(
                 tqdm(
                     pool.imap_unordered(fn, containers),
                     total=len(containers),
-                    desc=f"Fn={fn.__name__}",
+                    desc=desc,
                     dynamic_ncols=True,
                 )
             )
@@ -347,15 +352,20 @@ def call_mp_unordered(
 
 
 def call_mp_ordered(
-    fn: Callable[[_S], _T], containers: Sequence[_S] | npt.NDArray, with_progress: bool = False
+    fn: Callable[[_S], _T],
+    containers: Sequence[_S] | npt.NDArray,
+    with_progress: bool = False,
+    desc: str | None = None,
 ) -> list[_T]:
+    if desc is None:
+        desc = "call func in multiprocessing"
     with mp.get_context("spawn").Pool(processes=mp.cpu_count()) as pool:
         if with_progress:
             return list(
                 tqdm(
                     pool.map(fn, containers),
                     total=len(containers),
-                    desc=f"Fn={fn.__name__}",
+                    desc=desc,
                     dynamic_ncols=True,
                 )
             )

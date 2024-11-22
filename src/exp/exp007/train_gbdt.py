@@ -1,9 +1,10 @@
 import argparse
+from datetime import datetime
 
+import lightgbm as lgb
 import matplotlib.pyplot as plt
 import numpy as np
 import polars as pl
-import xgboost as xgb
 
 from src import constants, log, metrics, utils
 
@@ -36,19 +37,31 @@ def main() -> None:
     if args.make_fold:
         df_train = pl.read_csv(cfg.train_data_fp)
         df_test = pl.read_csv(cfg.test_data_fp)
+        # --- Traffic Light
         df_traffic_light = preprocess.load_df_traffic_light(constants.DATA_DIR / "traffic_lights")
         df_traffic_light_count = preprocess.make_df_traffic_light_count(df_traffic_light)
         df_traffic_col = [c for c in df_traffic_light_count.columns if c not in ["ID"]]
+        # --- Read OOF prediction by CNN, and then join it with df
+        oof_pred_cols = [f"pred-{c}" for c in constants.TARGET_COLS]
+        oof_nn = (
+            pl.read_parquet(constants.OUTPUT_DIR / cfg.name / "oof.parquet", columns=["sample_id", *oof_pred_cols])
+            .with_columns(ID=pl.col("sample_id").str.split("/").list[-1])
+            .rename({c: f"nn-{c}" for c in oof_pred_cols})
+        )
         # --- Preprocess
         common_col = sorted(list(set(df_train.columns) & set(df_test.columns)))
-        df_all = preprocess.add_feature(pl.concat([df_train.select(common_col), df_test.select(common_col)]))
+        df_all = pl.concat([df_train.select(common_col), df_test.select(common_col)])
         df_all = df_all.join(df_traffic_light_count, on="ID", how="left").with_columns(*[
             pl.col(c).fill_null(0).alias(c) for c in df_traffic_col
         ])
+        df_all = df_all.join(oof_nn, on="ID", how="left").with_columns(*[
+            pl.col(c).fill_null(0).alias(c) for c in oof_nn.columns if c not in ["sample_id", "ID"]
+        ])
+        df_all = preprocess.cast_dtype(df_all)
+        print(f"{df_all = }")
+        df_all = preprocess.add_feature(df_all, cfg.use_cols)
 
         df = df_train.select(["ID", *constants.TARGET_COLS]).join(df_all, on="ID", how="left")
-        # --- Read OOF prediction by CNN, and then join it with df
-
         # df_test = df_test.join(df_all, on="ID", how="left")
 
         # seedで順番変えても良いかもしれん
@@ -61,11 +74,13 @@ def main() -> None:
     else:
         df = pl.read_parquet(constants.INPUT_DIR / "train_folds.parquet")
     df = utils.reduce_memory_usage_pl(df, name="df")
+    logger.info(f"{df = }")
     logger.info(f"{cfg.train_data_fp = }")
     utils.pinfo(cfg.model_dump())
 
     # --- Train
     oof_total = pl.DataFrame()
+    scores_total = []
     for fold in range(cfg.n_folds):
         df_train = df.filter(pl.col("fold") != fold)
         df_valid = df.filter(pl.col("fold") == fold)
@@ -76,6 +91,7 @@ def main() -> None:
         target_cols = constants.TARGET_COLS
         drop_cols = [*target_cols, "ID", "fold", "scene_id", "scene_time", "index"]
         feature_cols = sorted(list(set(df_train.columns) - set(drop_cols)))
+        category_cols = [c for c in feature_cols if df_train[c].dtype == pl.Categorical]
 
         # testの時には列の並びに注意するためにログに出力しておく
         logger.info(f"""
@@ -86,50 +102,56 @@ def main() -> None:
         """)
         utils.pinfo(feature_cols)
         logger.info(f"{len(feature_cols) = }")
-
         y_train = df_train[target_cols].to_numpy()
-        ds_train = xgb.DMatrix(
-            df_train.select(feature_cols).to_pandas(),
-            label=y_train,
-            feature_names=feature_cols,
-            enable_categorical=True,
-            nthread=4,
-            missing=np.inf,
-        )
-        ds_valid = xgb.DMatrix(
-            df_valid.select(feature_cols).to_pandas(),
-            label=df_valid[target_cols].to_numpy(),
-            feature_names=feature_cols,
-            enable_categorical=True,
-            nthread=4,
-            missing=np.inf,
-        )
+        y_valid = df_valid[target_cols].to_numpy()
 
-        with utils.trace(f"Train Fold: {fold}"):
-            model = xgb.train(
-                params={
-                    **cfg.gbdt_model_params,
-                },
-                dtrain=ds_train,
-                num_boost_round=cfg.num_boost_round,
-                evals=[(ds_train, "train"), (ds_valid, "valid")],
-                verbose_eval=500,
-                maximize=cfg.maximize,
+        y_pred_total = np.zeros((len(df_valid), len(target_cols)))
+        for i_col, col in enumerate(target_cols):
+            logger.info(f"Training {col} / Fold: {fold}")
+            ds_train = lgb.Dataset(
+                df_train.select(feature_cols).to_pandas(),
+                label=y_train[:, i_col],
+                feature_name=feature_cols,
+                categorical_feature=category_cols,
+                free_raw_data=False,
+            )
+            ds_valid = lgb.Dataset(
+                df_valid.select(feature_cols).to_pandas(),
+                label=y_valid[:, i_col],
+                reference=ds_train,
+                feature_name=feature_cols,
+                categorical_feature=category_cols,
+                free_raw_data=False,
             )
 
-        # save feature importances
-        importances = model.get_score(importance_type="total_gain")
-        df_importances = pl.DataFrame({"feature": importances.keys(), "gain": importances.values()})
-        df_importances.write_parquet(save_dir / f"importances_{fold}.parquet")
-        utils.save_importances(df_importances, save_dir / f"importances_{fold}.png")
-        model.save_model(save_dir / f"xgb_model_{fold}.ubj")
+            with utils.trace(f"Train Fold: {fold}"):
+                logger.info(f"params: {cfg.gbdt_model_params}")
+                model = lgb.train(
+                    params={
+                        **cfg.gbdt_model_params,
+                    },
+                    train_set=ds_train,
+                    num_boost_round=cfg.num_boost_round,
+                    valid_sets=[ds_train, ds_valid],
+                    valid_names=["train", "valid"],
+                    callbacks=[lgb.callback.log_evaluation(100)],
+                )
 
-        y_preds = model.predict(ds_valid)
+            # save feature importances
+            importances = model.feature_importance(importance_type="gain")
+            feature_cols_model = model.feature_name()
+            df_importances = pl.DataFrame({"feature": feature_cols_model, "gain": importances})
+            df_importances.write_parquet(save_dir / f"importances_{fold}_{col}.parquet")
+            utils.save_importances(df_importances, save_dir / f"importances_{fold}_{col}.png")
+            model.save_model(save_dir / f"xgb_model_{fold}_{col}.ubj")
+            y_preds = model.predict(ds_valid.data)
+            y_pred_total[:, i_col] = y_preds
+
         oof = pl.concat(
             [
                 df_valid,
                 pl.DataFrame({
-                    **{f"pred-{col}": y_preds[:, i] for i, col in enumerate(target_cols)},
+                    **{f"pred-{col}": y_pred_total[:, i] for i, col in enumerate(target_cols)},
                 }),
             ],
             how="horizontal",
@@ -138,8 +160,11 @@ def main() -> None:
 
         score_each_dim = {}
         for i, col in enumerate(target_cols):
-            score_each_dim[col] = metrics.score(y_pred=y_preds[:, i], y_true=df_valid[col].to_numpy())
-        score_value = metrics.score(y_pred=y_preds, y_true=df_valid[target_cols].to_numpy())
+            score_each_dim[col] = metrics.score(y_pred=oof[f"pred-{col}"].to_numpy(), y_true=oof[col].to_numpy())
+        score_value = metrics.score(
+            y_pred=oof[[f"pred-{col}" for col in target_cols]].to_numpy(), y_true=df_valid[target_cols].to_numpy()
+        )
+        scores_total.append(score_value)
 
         oof.write_parquet(save_dir / f"oof_{fold}.parquet")
         logger.info(f"{oof_total = }")
@@ -149,7 +174,18 @@ def main() -> None:
     total_score = metrics.score(
         y_pred=oof_total[[f"pred-{c}" for c in target_cols]].to_numpy(), y_true=oof_total[target_cols].to_numpy()
     )
-    logger.info(f"Total Score: {total_score = }")
+    logger.info(f"""
+==========================
+Exp: {cfg.name}, DESC: {cfg.description}
+
+Total Score: {total_score = }
+
+Scores: {scores_total}
+Mean: {np.mean(scores_total)} +/- {np.std(scores_total)}
+
+Training finished. {CALLED_TIME = }, {COMMIT_HASH = }, Duration: {log.calc_duration_from(CALLED_TIME)}
+==========================
+    """)
 
 
 if __name__ == "__main__":

@@ -277,7 +277,7 @@ def overlay_trajectory(
             marker="o",
             color="forestgreen",
             alpha=1.0,
-            markersize=3,
+            markersize=5,
             linestyle="solid",
         )
     else:
@@ -293,7 +293,7 @@ def overlay_trajectory(
                 marker="o",
                 color=color,
                 alpha=1.0,
-                markersize=3,
+                markersize=5,
                 linestyle="solid",
                 label=label,
             )
