@@ -51,3 +51,5 @@
 
 - [x] x0, ..., z5までそれぞれ別のGBDTモデルを作る -> あまり向上がみられん
 - [ ] 時刻tのモデルの学習には時刻t-1,t-2,... の予測結果を付与する
+
+- [ ] 読んでアイデアを出す <https://www.kaggle.com/competitions/nfl-player-contact-detection/discussion/391635>

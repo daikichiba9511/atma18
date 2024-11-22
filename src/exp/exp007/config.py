@@ -67,8 +67,10 @@ class Config(pydantic.BaseModel):
     model_name: str = "Atma18VisionModel"
     model_params: dict[str, str | float | bool | int] = {
         # "model_name": "tf_efficientnet_b3.ns_jft_in1k",
-        "model_name": "resnet34d",
+        # "model_name": "resnet34d",
         # "model_name": "convnext_tiny.fb_in22k_ft_in1k",
+        "model_name": "convnext_base.fb_in22k_ft_in1k",
+        # "model_name": "eva02_base_patch14_224.mim_in22k",
         "pretrained": True,
     }
     cols_aux: tuple[str, ...] = (

@@ -57,17 +57,22 @@ if __name__ == "__main__":
 
     model_name = "Atma18VisionModel"
 
-    model_params: dict[str, Any] = {"model_name": "resnet18", "pretrained": False}
-    model, ema_model = get_model(model_name, model_params=model_params)
-    summary(model, input_size=(8, 9, 64, 128))
-
-    model_params: dict[str, Any] = {"model_name": "convnext_tiny.fb_in22k_ft_in1k", "pretrained": False}
-    model, ema_model = get_model(model_name, model_params=model_params)
-    summary(model, input_size=(8, 9, 64, 128))
-
-    # x = torch.randn(8, 9, 64, 128)
-    # out = model(x)
-    # y = out["logits"]
-    # print(y.shape)
+    # model_params: dict[str, Any] = {"model_name": "resnet18", "pretrained": False}
+    # model, ema_model = get_model(model_name, model_params=model_params)
     # summary(model, input_size=(8, 9, 64, 128))
-    # print("Done!")
+
+    # model_params: dict[str, Any] = {"model_name": "convnext_tiny.fb_in22k_ft_in1k", "pretrained": False}
+    # model, ema_model = get_model(model_name, model_params=model_params)
+    # summary(model, input_size=(8, 9, 64, 128))
+
+    model_params: dict[str, Any] = {"model_name": "eva02_base_patch14_224.mim_in22k", "pretrained": False}
+    model, ema_model = get_model(model_name, model_params=model_params)
+    model, ema_model = model.cpu(), ema_model.cpu()
+    summary(model, input_size=(8, 9, 224, 224), device="cpu")
+
+    x = torch.randn(8, 9, 224, 224)
+    out = model(x)
+    for k, v in out.items():
+        print(f"{k = }: {v.shape = }")
+
+    print("Done!")

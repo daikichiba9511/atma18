@@ -321,6 +321,7 @@ def init_dataloader(
     debug: bool = False,
     cols_aux: tuple[str, ...] = ("vEgo", "aEgo", "steeringAngleDeg"),
     cols_aux_cls: tuple[str, ...] = ("brakePressed", "leftBlinker", "rightBlinker"),
+    use_global_video_cache: bool = False,
 ) -> tuple[torch_data.DataLoader, torch_data.DataLoader]:
     if mp.cpu_count() < num_workers:
         num_workers = mp.cpu_count()
@@ -370,7 +371,6 @@ def init_dataloader(
             f"{base_path}/image_t.png",
         ])
     video_cached = dict(utils.call_mp_unordered(read_image, cache_paths, with_progress=True))
-
     train_ds: torch_data.Dataset[TrainBatch] = MyTrainDataset(
         df_train, label=label_train, video_caches=video_cached, transforms=train_transforms, label_aux=label_aux
     )
