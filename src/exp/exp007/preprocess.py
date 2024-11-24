@@ -193,7 +193,7 @@ def cast_dtype(df: pl.DataFrame) -> pl.DataFrame:
         dtype = df[col].dtype
         if dtype in [pl.Boolean]:
             df = df.with_columns(pl.col(col).cast(pl.Int32))
-        elif dtype in [pl.String, pl.Utf8]:
+        elif dtype in [pl.String, pl.Utf8, pl.Object]:
             df = df.with_columns(pl.col(col).cast(pl.Categorical))
     return df
 

@@ -22,6 +22,7 @@ def get_args() -> argparse.Namespace:
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--make-fold", action="store_true")
+    parser.add_argument("--full-train", action="store_true")
     return parser.parse_args()
 
 
@@ -35,8 +36,6 @@ def main() -> None:
 
     # --- CV
     if args.make_fold:
-        df_train = pl.read_csv(cfg.train_data_fp)
-        df_test = pl.read_csv(cfg.test_data_fp)
         # --- Traffic Light
         df_traffic_light = preprocess.load_df_traffic_light(constants.DATA_DIR / "traffic_lights")
         df_traffic_light_count = preprocess.make_df_traffic_light_count(df_traffic_light)
@@ -48,21 +47,24 @@ def main() -> None:
             .with_columns(ID=pl.col("sample_id").str.split("/").list[-1])
             .rename({c: f"nn-{c}" for c in oof_pred_cols})
         )
-        # --- Preprocess
+
+        df_train = pl.read_csv(cfg.train_data_fp)
+        df_test = pl.read_csv(cfg.test_data_fp)
         common_col = sorted(list(set(df_train.columns) & set(df_test.columns)))
-        df_all = pl.concat([df_train.select(common_col), df_test.select(common_col)])
-        df_all = df_all.join(df_traffic_light_count, on="ID", how="left").with_columns(*[
-            pl.col(c).fill_null(0).alias(c) for c in df_traffic_col
-        ])
-        df_all = df_all.join(oof_nn, on="ID", how="left").with_columns(*[
-            pl.col(c).fill_null(0).alias(c) for c in oof_nn.columns if c not in ["sample_id", "ID"]
-        ])
+
+        # --- Preprocess
+        df_all = (
+            pl.concat([df_train.select(common_col), df_test.select(common_col)])
+            .join(df_traffic_light_count, on="ID", how="left")
+            .with_columns(*[pl.col(c).fill_null(0).alias(c) for c in df_traffic_col])
+            .join(oof_nn, on="ID", how="left")
+            .with_columns(*[pl.col(c).fill_null(0).alias(c) for c in oof_nn.columns if c not in ["sample_id", "ID"]])
+        )
         df_all = preprocess.cast_dtype(df_all)
-        print(f"{df_all = }")
         df_all = preprocess.add_feature(df_all, cfg.use_cols)
 
         df = df_train.select(["ID", *constants.TARGET_COLS]).join(df_all, on="ID", how="left")
-        # df_test = df_test.join(df_all, on="ID", how="left")
+        df_test = df_test.select(["ID"]).join(df_all, on="ID", how="left")
 
         # seedで順番変えても良いかもしれん
         df = df.with_columns(fold=pl.lit(-1)).with_row_index()
@@ -87,9 +89,11 @@ def main() -> None:
         if args.debug:
             df_train = df_train.head(200)
             df_valid = df_valid.head(200)
+        if args.full_train:
+            df_train = pl.concat([df_train, df_valid], how="vertical")
 
         target_cols = constants.TARGET_COLS
-        drop_cols = [*target_cols, "ID", "fold", "scene_id", "scene_time", "index"]
+        drop_cols = [*target_cols, "ID", "fold", "scene_id", "scene_time", "index", "sample_id"]
         feature_cols = sorted(list(set(df_train.columns) - set(drop_cols)))
         category_cols = [c for c in feature_cols if df_train[c].dtype == pl.Categorical]
 
@@ -147,6 +151,10 @@ def main() -> None:
             y_preds = model.predict(ds_valid.data)
             y_pred_total[:, i_col] = y_preds
 
+        # If full_train, skip the evaluation
+        if args.full_train:
+            break
+
         oof = pl.concat(
             [
                 df_valid,
@@ -156,17 +164,17 @@ def main() -> None:
             ],
             how="horizontal",
         )
+        oof.write_parquet(save_dir / f"oof_{fold}.parquet")
         oof_total = pl.concat([oof_total, oof], how="vertical")
 
+        # --- Evaluation
         score_each_dim = {}
-        for i, col in enumerate(target_cols):
+        for _i, col in enumerate(target_cols):
             score_each_dim[col] = metrics.score(y_pred=oof[f"pred-{col}"].to_numpy(), y_true=oof[col].to_numpy())
         score_value = metrics.score(
             y_pred=oof[[f"pred-{col}" for col in target_cols]].to_numpy(), y_true=df_valid[target_cols].to_numpy()
         )
         scores_total.append(score_value)
-
-        oof.write_parquet(save_dir / f"oof_{fold}.parquet")
         logger.info(f"{oof_total = }")
         utils.pinfo(score_each_dim)
         logger.info(f"Score: {score_value = }")

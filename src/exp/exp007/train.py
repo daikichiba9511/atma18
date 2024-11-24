@@ -280,7 +280,7 @@ class MyValidDataset(torch_data.Dataset[ValidBatch]):
     def __len__(self) -> int:
         return len(self.df)
 
-    def __getitem__(self, idx: int) -> TrainBatch:
+    def __getitem__(self, idx: int) -> ValidBatch:
         base_path = pathlib.Path(self.df["base_path"][idx])
         image = read_multiframe_image(base_path, self.video_caches)
         if self.transform_fn is not None:

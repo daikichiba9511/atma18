@@ -69,8 +69,9 @@ class Config(pydantic.BaseModel):
         # "model_name": "tf_efficientnet_b3.ns_jft_in1k",
         # "model_name": "resnet34d",
         # "model_name": "convnext_tiny.fb_in22k_ft_in1k",
-        # "model_name": "convnext_base.fb_in22k_ft_in1k",
-        "model_name": "eva02_base_patch14_224.mim_in22k",
+        "model_name": "convnext_base.fb_in22k_ft_in1k",
+        # "model_name": "convnext_large.fb_in22k_ft_in1k",
+        # "model_name": "eva02_base_patch14_224.mim_in22k",
         "pretrained": True,
     }
     cols_aux: tuple[str, ...] = (
@@ -175,3 +176,76 @@ class GBDTConfig(pydantic.BaseModel):
     n_folds: int = 5
     train_data_fp: pathlib.Path = constants.DATA_DIR / "train_features.csv"
     test_data_fp: pathlib.Path = constants.DATA_DIR / "test_features.csv"
+
+
+class PPConfig(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True, frozen=True, protected_namespaces=())
+    name: str = EXP_NO
+    # -- General
+    is_debug: bool = False
+    root_dir: pathlib.Path = constants.ROOT
+    """Root directory. alias to constants.ROOT"""
+    input_dir: pathlib.Path = constants.INPUT_DIR
+    """input directory. alias to constants.INPUT_DIR"""
+    output_dir: pathlib.Path = constants.OUTPUT_DIR / EXP_NO
+    """output directory. constants.OUTPUT_DIR/EXP_NO"""
+    data_dir: pathlib.Path = constants.DATA_DIR
+    """data directory. alias to constants.DATA_DIR"""
+    device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    seed: int = 42
+
+    # -- Train
+    train_log_interval: int = 1
+    gbdt_model_params: dict[str, Any] = {
+        "learning_rate": 0.01,
+        "verbosity": -1,
+        "seed": seed,
+        "boosting_type": "gbdt",
+        "n_jobs": -1,
+        "max_depth": 5,
+        "num_leaves": int(0.7 * (2**5)),
+        "bagging_seed": seed,
+        "bagging_fraction": 0.3,
+        "feature_fraction_seed": seed,
+        "feature_fraction": 0.3,
+        "drop_seed": seed,
+        "metric": "mae",
+        "objective": "regression_l1",
+    }
+    num_boost_round: int = 2000
+    # num_boost_round: int = 3
+    maximize: bool = False
+    use_cols: tuple[str, ...] = (
+        "vEgo",
+        "aEgo",
+        "steeringAngleDeg",
+        "steeringTorque",
+        "brake",
+        "brakePressed",
+        "gas",
+        "gasPressed",
+        "leftBlinker",
+        "rightBlinker",
+        *[f"nn-pred-{c}" for c in constants.TARGET_COLS],  # prediciton by CNN
+    )
+
+    # -- Data
+    n_folds: int = 5
+    train_data_fp: pathlib.Path = constants.DATA_DIR / "train_features.csv"
+    test_data_fp: pathlib.Path = constants.DATA_DIR / "test_features.csv"
+
+    oof_nn_paths: list[pathlib.Path] = [
+        constants.OUTPUT_DIR / name / "oof_0.parquet",
+        constants.OUTPUT_DIR / name / "oof_1.parquet",
+        constants.OUTPUT_DIR / name / "oof_2.parquet",
+        constants.OUTPUT_DIR / name / "oof_3.parquet",
+        constants.OUTPUT_DIR / name / "oof_4.parquet",
+    ]
+
+    oof_gbdt_paths: list[pathlib.Path] = [
+        constants.OUTPUT_DIR / name / "train_gbdt" / f"{seed}" / "oof_0.parquet",
+        constants.OUTPUT_DIR / name / "train_gbdt" / f"{seed}" / "oof_1.parquet",
+        constants.OUTPUT_DIR / name / "train_gbdt" / f"{seed}" / "oof_2.parquet",
+        constants.OUTPUT_DIR / name / "train_gbdt" / f"{seed}" / "oof_3.parquet",
+        constants.OUTPUT_DIR / name / "train_gbdt" / f"{seed}" / "oof_4.parquet",
+    ]
