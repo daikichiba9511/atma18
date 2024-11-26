@@ -93,20 +93,20 @@ def train_one_epoch(
         _key, x, y = batch
         x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
         features = y[:, 18:].float()
-        # y_aux = y[:, 18 : 18 + n_col_aux].float()
+        y_aux = y[:, 18 : 18 + n_col_aux].float()
         # y_aux_cls = y[:, 18 + n_col_aux :]
         y = y[:, :18]
-        with autocast_mode.autocast(device_type=device.type, enabled=use_amp, dtype=torch.float16):
+        with autocast_mode.autocast(device_type=device.type, enabled=use_amp, dtype=torch.bfloat16):
             output = model(x, features)
             y_pred = output["logits"].float()
-            # y_pred_aux = output["logits_aux1"].float()
+            y_pred_aux = output["logits_aux1"].float()
             # y_pred_aux_cls_blinker = output["logits_aux_cls_blinker"]
             # y_pred_aux_cls_brake = output["logits_aux_cls_brake"]
 
             loss = criterion(y_pred, y)
-            # loss += 0.5 * criterion(y_pred_aux[:, 0], y_aux[:, 0])  # vEgo
-            # loss += 0.5 * criterion(y_pred_aux[:, 1], y_aux[:, 1])  # aEgo
-            # loss += 0.01 * criterion(y_pred_aux[:, 2], y_aux[:, 2])  # steeringAngleDeg
+            loss += 0.5 * criterion(y_pred_aux[:, 0], y_aux[:, 0])  # vEgo
+            loss += 0.5 * criterion(y_pred_aux[:, 1], y_aux[:, 1])  # aEgo
+            loss += 0.1 * criterion(y_pred_aux[:, 2], y_aux[:, 2])  # steeringAngleDeg
             # loss += 0.01 * criterion(y_pred_aux[:, 3], y_aux[:, 3])  # steeringTorque
             # loss += 0.1 * F.binary_cross_entropy_with_logits(
             #     y_pred_aux_cls_blinker[:, 0], y_aux_cls[:, 0]
@@ -118,7 +118,9 @@ def train_one_epoch(
             #     y_pred_aux_cls_brake[:, 0], y_aux_cls[:, 2]
             # )  # brakePressed
         if not torch.isfinite(loss).all():
-            raise ValueError("Loss is not finite. ")
+            print(f"{loss=}, {torch.isnan(features).sum()=}, {torch.isnan(y_aux).sum()=}")
+            continue
+            # raise ValueError("Loss is not finite. ")
 
         optimizer.zero_grad()
         if scaler is not None:
